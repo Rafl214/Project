@@ -26,7 +26,7 @@ MAX_CONTENT_LENGTH_MB = int(os.getenv("MAX_CONTENT_LENGTH_MB", "30"))
 CHECKER_THREADS = max(1, int(os.getenv("CHECKER_THREADS", "4")))
 MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-5.4")
 POLZA_BASE_URL = os.getenv("POLZA_BASE_URL", "https://polza.ai/api/v1")
-POLZA_API_KEY = "pza_RtCE4dbN1VlsExS9zyw6Vn6ghyxTZiPw"
+POLZA_API_KEY = os.getenv("POLZA_API_KEY", "").strip()
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH_MB * 1024 * 1024
