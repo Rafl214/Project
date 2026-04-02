@@ -1,61 +1,128 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Загрузка PDF</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-        }
-        .box {
-            border: 1px solid #ccc;
-            border-radius: 12px;
-            padding: 20px;
-        }
-        button {
-            margin-top: 15px;
-            padding: 10px 16px;
-            cursor: pointer;
-        }
-        #result {
-            margin-top: 20px;
-            white-space: pre-wrap;
-            background: #f5f5f5;
-            padding: 15px;
-            border-radius: 10px;
-        }
-        .error {
-            color: red;
-        }
-    </style>
-    <script defer src="{{ url_for('static', filename='js/page.js') }}"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Проверка олимпиадных работ</title>
+  <style>
+    :root {
+      color-scheme: light;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 960px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #fafafa;
+      color: #222;
+    }
+
+    .box {
+      border: 1px solid #ddd;
+      border-radius: 16px;
+      padding: 24px;
+      background: white;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    .hint {
+      color: #555;
+      margin-bottom: 20px;
+    }
+
+    .row {
+      margin-bottom: 18px;
+    }
+
+    button,
+    .download-link {
+      margin-top: 15px;
+      padding: 10px 16px;
+      cursor: pointer;
+      border: 0;
+      border-radius: 10px;
+      background: #1f6feb;
+      color: white;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 14px;
+    }
+
+    button[disabled] {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .download-link[hidden] {
+      display: none;
+    }
+
+    #status {
+      margin-top: 20px;
+      font-weight: bold;
+    }
+
+    #job-meta {
+      margin-top: 10px;
+      color: #666;
+      font-size: 14px;
+    }
+
+    #result {
+      margin-top: 20px;
+      white-space: pre-wrap;
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 10px;
+      min-height: 80px;
+      overflow-x: auto;
+    }
+
+    .error {
+      color: #b00020;
+    }
+
+    .success {
+      color: #0a7a2f;
+    }
+
+    .muted {
+      color: #666;
+    }
+  </style>
+  <script defer src="{{ url_for('static', filename='js/page.js') }}"></script>
 </head>
 <body>
-    <div class="box">
-        <h1>Загрузите 2 PDF файла</h1>
+  <div class="box">
+    <h1>Проверка олимпиадных работ</h1>
+    <p class="hint">
+      Загрузите 2 PDF-файла: условия/критерии и работу участника.
+      Проверка запускается в фоне, поэтому страница не зависает. Параллельных задач: {{ checker_threads }}.
+    </p>
 
-        <form id="pdf-form" enctype="multipart/form-data">
-            <div>
-                <label>PDF 1:</label><br>
-                <input type="file" name="file1" accept=".pdf" required>
-            </div>
+    <form id="pdf-form" enctype="multipart/form-data">
+      <div class="row">
+        <label for="file1">PDF 1:</label><br>
+        <input id="file1" type="file" name="file1" accept=".pdf" required>
+      </div>
 
-            <br>
+      <div class="row">
+        <label for="file2">PDF 2:</label><br>
+        <input id="file2" type="file" name="file2" accept=".pdf" required>
+      </div>
 
-            <div>
-                <label>PDF 2:</label><br>
-                <input type="file" name="file2" accept=".pdf" required>
-            </div>
+      <button id="submit-btn" type="submit">Запустить проверку</button>
+      <a id="download-link" class="download-link" href="#" hidden>Сохранить результат</a>
+    </form>
 
-            <button type="submit">Отправить</button>
-        </form>
-
-        <div id="status"></div>
-        <div id="result"></div>
-    </div>
+    <div id="status"></div>
+    <div id="job-meta" class="muted"></div>
+    <div id="result">Здесь появится результат проверки.</div>
+  </div>
 </body>
 </html>

@@ -1,0 +1,13 @@
+Заменить / добавить файлы:
+
+Project/app.py                 -> заменить полностью
+Project/Prompts.py             -> заменить полностью
+Project/templates/index.html   -> заменить полностью
+Project/static/js/page.js      -> заменить полностью
+
+Новые файлы в корне проекта:
+requirements.txt
+Procfile
+Dockerfile
+.env.example
+README_DEPLOY.md
