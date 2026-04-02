@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Загрузка PDF</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+        .box {
+            border: 1px solid #ccc;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        button {
+            margin-top: 15px;
+            padding: 10px 16px;
+            cursor: pointer;
+        }
+        #result {
+            margin-top: 20px;
+            white-space: pre-wrap;
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 10px;
+        }
+        .error {
+            color: red;
+        }
+    </style>
+    <script defer src="{{ url_for('static', filename='js/page.js') }}"></script>
+</head>
+<body>
+    <div class="box">
+        <h1>Загрузите 2 PDF файла</h1>
+
+        <form id="pdf-form" enctype="multipart/form-data">
+            <div>
+                <label>PDF 1:</label><br>
+                <input type="file" name="file1" accept=".pdf" required>
+            </div>
+
+            <br>
+
+            <div>
+                <label>PDF 2:</label><br>
+                <input type="file" name="file2" accept=".pdf" required>
+            </div>
+
+            <button type="submit">Отправить</button>
+        </form>
+
+        <div id="status"></div>
+        <div id="result"></div>
+    </div>
+</body>
+</html>
