@@ -10,41 +10,48 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, send_file
 from openai import OpenAI
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
-from Prompts import SYSTEM_PROMPT
-
 
 BASE_DIR = Path(__file__).resolve().parent
+ROOT_DIR = BASE_DIR.parent
+load_dotenv(ROOT_DIR / ".env")
+
+from client_config import ClientSettings, get_client_configs_dir, list_registered_clients, resolve_client_settings  # noqa: E402
+
+
 RESULTS_DIR = BASE_DIR / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-MAX_CONTENT_LENGTH_MB = int(os.getenv("MAX_CONTENT_LENGTH_MB", "30"))
 CHECKER_THREADS = max(1, int(os.getenv("CHECKER_THREADS", "4")))
-MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-5.4")
-POLZA_BASE_URL = os.getenv("POLZA_BASE_URL", "https://polza.ai/api/v1")
-POLZA_API_KEY = os.getenv("POLZA_API_KEY", "").strip()
+SERVER_MAX_CONTENT_LENGTH_MB = max(
+    1,
+    int(os.getenv("SERVER_MAX_CONTENT_LENGTH_MB", os.getenv("MAX_CONTENT_LENGTH_MB", "30"))),
+)
+FRONTEND_ENABLED = os.getenv("ENABLE_FRONTEND", "1") == "1"
+CLIENT_ID_HEADER = os.getenv("CLIENT_ID_HEADER", "X-Client-ID")
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH_MB * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = SERVER_MAX_CONTENT_LENGTH_MB * 1024 * 1024
 
 executor = ThreadPoolExecutor(max_workers=CHECKER_THREADS, thread_name_prefix="olympiad-checker")
 jobs_lock = threading.Lock()
 jobs: dict[str, dict[str, Any]] = {}
 
 
-def get_client() -> OpenAI:
-    if not POLZA_API_KEY:
+def get_client(settings: ClientSettings) -> OpenAI:
+    if not settings.polza_api_key:
         raise RuntimeError(
-            "Не задан POLZA_API_KEY. Добавьте его в переменные окружения."
+            "Не задан POLZA_API_KEY. Добавьте его в .env или переопределите в конфиге клиента."
         )
 
     return OpenAI(
-        base_url=POLZA_BASE_URL,
-        api_key=POLZA_API_KEY,
+        base_url=settings.polza_base_url,
+        api_key=settings.polza_api_key,
     )
 
 
@@ -57,16 +64,22 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def build_messages(file1_name: str, file1_bytes: bytes, file2_name: str, file2_bytes: bytes) -> list[dict[str, Any]]:
+def build_messages(
+    settings: ClientSettings,
+    file1_name: str,
+    file1_bytes: bytes,
+    file2_name: str,
+    file2_bytes: bytes,
+) -> list[dict[str, Any]]:
     return [
         {
             "role": "system",
-            "content": SYSTEM_PROMPT,
+            "content": settings.system_prompt,
         },
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": "Проанализируй эти документы:"},
+                {"type": "text", "text": settings.request_intro_text},
                 {
                     "type": "file",
                     "file": {
@@ -108,7 +121,40 @@ def update_job(job_id: str, **fields: Any) -> None:
             jobs[job_id].update(fields)
 
 
-def create_job(file1_name: str, file2_name: str) -> str:
+def extract_requested_client_id() -> str | None:
+    header_client_id = request.headers.get(CLIENT_ID_HEADER)
+    if header_client_id and header_client_id.strip():
+        return header_client_id.strip()
+
+    form_client_id = request.form.get("client_id")
+    if form_client_id and form_client_id.strip():
+        return form_client_id.strip()
+
+    query_client_id = request.args.get("client_id")
+    if query_client_id and query_client_id.strip():
+        return query_client_id.strip()
+
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        json_client_id = payload.get("client_id")
+        if isinstance(json_client_id, str) and json_client_id.strip():
+            return json_client_id.strip()
+
+    return None
+
+
+def validate_upload_size(settings: ClientSettings, file1_bytes: bytes, file2_bytes: bytes) -> str | None:
+    limit_bytes = settings.max_content_length_mb * 1024 * 1024
+    total_size = len(file1_bytes) + len(file2_bytes)
+    if total_size > limit_bytes:
+        return (
+            f"Суммарный размер файлов превышает лимит клиента {settings.display_name}: "
+            f"{settings.max_content_length_mb} МБ."
+        )
+    return None
+
+
+def create_job(file1_name: str, file2_name: str, settings: ClientSettings) -> str:
     job_id = uuid.uuid4().hex
     with jobs_lock:
         jobs[job_id] = {
@@ -118,6 +164,7 @@ def create_job(file1_name: str, file2_name: str) -> str:
             "created_at": utc_now_iso(),
             "updated_at": utc_now_iso(),
             "file_names": [file1_name, file2_name],
+            "client": settings.to_public_dict(),
             "result": None,
             "download_path": None,
             "error": None,
@@ -125,19 +172,27 @@ def create_job(file1_name: str, file2_name: str) -> str:
     return job_id
 
 
-def save_result_to_disk(job_id: str, result_payload: Any) -> Path:
+def save_result_to_disk(job_id: str, result_payload: Any, settings: ClientSettings) -> Path:
     filename = f"result_{job_id}.json"
     path = RESULTS_DIR / filename
     payload = {
         "job_id": job_id,
         "saved_at": utc_now_iso(),
+        "client": settings.to_public_dict(),
         "result": result_payload,
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
 
 
-def run_check(job_id: str, file1_name: str, file1_bytes: bytes, file2_name: str, file2_bytes: bytes) -> None:
+def run_check(
+    job_id: str,
+    file1_name: str,
+    file1_bytes: bytes,
+    file2_name: str,
+    file2_bytes: bytes,
+    settings: ClientSettings,
+) -> None:
     update_job(
         job_id,
         status="processing",
@@ -146,22 +201,26 @@ def run_check(job_id: str, file1_name: str, file1_bytes: bytes, file2_name: str,
     )
 
     try:
-        client = get_client()
-        messages = build_messages(file1_name, file1_bytes, file2_name, file2_bytes)
-        completion = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages,
-            extra_body={
+        client = get_client(settings)
+        messages = build_messages(settings, file1_name, file1_bytes, file2_name, file2_bytes)
+
+        completion_kwargs: dict[str, Any] = {
+            "model": settings.model_name,
+            "messages": messages,
+        }
+        if settings.reasoning_enabled:
+            completion_kwargs["extra_body"] = {
                 "reasoning": {
                     "enabled": True,
-                    "effort": "low",
+                    "effort": settings.reasoning_effort,
                 }
-            },
-        )
+            }
+
+        completion = client.chat.completions.create(**completion_kwargs)
 
         raw_result = completion.choices[0].message.content or ""
         result_payload, _result_kind = normalize_result(raw_result)
-        saved_path = save_result_to_disk(job_id, result_payload)
+        saved_path = save_result_to_disk(job_id, result_payload, settings)
 
         update_job(
             job_id,
@@ -184,22 +243,56 @@ def run_check(job_id: str, file1_name: str, file1_bytes: bytes, file2_name: str,
 
 @app.errorhandler(RequestEntityTooLarge)
 def handle_large_file(_error: RequestEntityTooLarge):
-    return jsonify({"error": f"Файлы слишком большие. Лимит: {MAX_CONTENT_LENGTH_MB} МБ"}), 413
+    return (
+        jsonify(
+            {
+                "error": (
+                    "Файлы слишком большие для сервера. "
+                    f"Текущий серверный предел: {SERVER_MAX_CONTENT_LENGTH_MB} МБ."
+                )
+            }
+        ),
+        413,
+    )
 
 
 @app.get("/")
 def index():
-    return render_template("index.html", checker_threads=CHECKER_THREADS)
+    if not FRONTEND_ENABLED:
+        return jsonify(
+            {
+                "ok": True,
+                "frontend_enabled": False,
+                "message": "Frontend отключён. Используйте API-эндпоинт POST /upload.",
+                "client_id_header": CLIENT_ID_HEADER,
+                "registered_clients": list_registered_clients(),
+            }
+        )
+
+    return render_template(
+        "index.html",
+        checker_threads=CHECKER_THREADS,
+        client_id_header=CLIENT_ID_HEADER,
+    )
 
 
 @app.get("/healthz")
 def healthz():
+    try:
+        default_settings = resolve_client_settings(None)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
     return jsonify(
         {
             "ok": True,
             "threads": CHECKER_THREADS,
             "results_dir": str(RESULTS_DIR),
-            "has_api_key": bool(POLZA_API_KEY),
+            "frontend_enabled": FRONTEND_ENABLED,
+            "client_id_header": CLIENT_ID_HEADER,
+            "client_configs_dir": str(get_client_configs_dir()),
+            "registered_clients": list_registered_clients(),
+            "default_client": default_settings.to_public_dict(),
         }
     )
 
@@ -219,6 +312,12 @@ def upload():
         if not file1.filename.lower().endswith(".pdf") or not file2.filename.lower().endswith(".pdf"):
             return jsonify({"error": "Можно загружать только PDF"}), 400
 
+        requested_client_id = extract_requested_client_id()
+        try:
+            settings = resolve_client_settings(requested_client_id)
+        except ValueError as exc:
+            return jsonify({"error": f"Ошибка конфигурации клиента: {exc}"}), 400
+
         safe_name_1 = secure_filename(file1.filename) or "file1.pdf"
         safe_name_2 = secure_filename(file2.filename) or "file2.pdf"
 
@@ -228,17 +327,25 @@ def upload():
         if not file1_bytes or not file2_bytes:
             return jsonify({"error": "Оба файла должны быть непустыми"}), 400
 
-        job_id = create_job(safe_name_1, safe_name_2)
-        executor.submit(run_check, job_id, safe_name_1, file1_bytes, safe_name_2, file2_bytes)
+        size_error = validate_upload_size(settings, file1_bytes, file2_bytes)
+        if size_error:
+            return jsonify({"error": size_error, "client": settings.to_public_dict()}), 413
 
-        return jsonify(
-            {
-                "job_id": job_id,
-                "status": "queued",
-                "message": "Файлы приняты. Проверка запущена в фоне.",
-                "status_url": f"/result/{job_id}",
-            }
-        ), 202
+        job_id = create_job(safe_name_1, safe_name_2, settings)
+        executor.submit(run_check, job_id, safe_name_1, file1_bytes, safe_name_2, file2_bytes, settings)
+
+        return (
+            jsonify(
+                {
+                    "job_id": job_id,
+                    "status": "queued",
+                    "message": "Файлы приняты. Проверка запущена в фоне.",
+                    "status_url": f"/result/{job_id}",
+                    "client": settings.to_public_dict(),
+                }
+            ),
+            202,
+        )
     except Exception as exc:  # noqa: BLE001
         app.logger.exception("Upload failed")
         return jsonify({"error": f"Ошибка обработки: {exc}"}), 500
@@ -258,6 +365,7 @@ def get_result(job_id: str):
         "message": job["message"],
         "created_at": job["created_at"],
         "updated_at": job["updated_at"],
+        "client": job["client"],
     }
 
     if job["status"] == "done":

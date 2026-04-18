@@ -1,0 +1,9 @@
+{
+  "display_name": "Демо-клиент",
+  "model_name": "openai/gpt-5.4",
+  "request_intro_text": "Проверь эти документы по правилам демо-клиента и верни JSON-результат.",
+  "system_prompt_file": "prompts/demo-school_system_prompt.txt",
+  "reasoning_enabled": true,
+  "reasoning_effort": "medium",
+  "max_content_length_mb": 30
+}

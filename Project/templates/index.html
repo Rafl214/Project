@@ -39,6 +39,15 @@
       margin-bottom: 18px;
     }
 
+    input[type="text"] {
+      width: 100%;
+      max-width: 420px;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+
     button,
     .download-link {
       margin-top: 15px;
@@ -104,8 +113,18 @@
       Загрузите 2 PDF-файла: условия/критерии и работу участника.
       Проверка запускается в фоне, поэтому страница не зависает. Параллельных задач: {{ checker_threads }}.
     </p>
+    <p class="hint">
+      Для выбора отдельного клиентского конфига укажите <code>client_id</code>.
+      Если поле пустое или конфиг для клиента не найден, будут использованы базовые настройки.
+      Для API можно передавать тот же идентификатор через заголовок <code>{{ client_id_header }}</code>.
+    </p>
 
     <form id="pdf-form" enctype="multipart/form-data">
+      <div class="row">
+        <label for="client_id">Client ID (необязательно):</label><br>
+        <input id="client_id" type="text" name="client_id" placeholder="например, demo-school">
+      </div>
+
       <div class="row">
         <label for="file1">PDF 1:</label><br>
         <input id="file1" type="file" name="file1" accept=".pdf" required>

@@ -25,6 +25,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function buildJobMeta(data) {
+    const parts = [];
+
+    if (data.job_id) {
+      parts.push(`Задача: ${data.job_id}`);
+    }
+
+    if (data.client) {
+      const effectiveClient = data.client.effective_client_id || "default";
+      const displayName = data.client.display_name || effectiveClient;
+      parts.push(`Клиент: ${displayName} (${effectiveClient})`);
+      parts.push(`Конфиг: ${data.client.config_source || "default"}`);
+      parts.push(`Модель: ${data.client.model_name}`);
+    }
+
+    if (data.updated_at) {
+      parts.push(`Обновлено: ${data.updated_at}`);
+    }
+
+    return parts.join(" • ");
+  }
+
   async function pollResult(jobId) {
     try {
       const response = await fetch(`/result/${jobId}`);
@@ -36,7 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      jobMetaBlock.textContent = `Задача: ${data.job_id} • Обновлено: ${data.updated_at}`;
+      jobMetaBlock.textContent = buildJobMeta(data);
       setStatus(data.message || "Обработка...", data.status === "error" ? "error" : "");
 
       if (data.status === "queued" || data.status === "processing") {
@@ -94,11 +116,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!response.ok) {
         submitButton.disabled = false;
         setStatus(data.error || "Ошибка", "error");
+        if (data.client) {
+          jobMetaBlock.textContent = buildJobMeta(data);
+        }
         return;
       }
 
       setStatus(data.message || "Задача создана.");
-      jobMetaBlock.textContent = `Задача: ${data.job_id}`;
+      jobMetaBlock.textContent = buildJobMeta(data);
       resultBlock.textContent = "Ожидаем результат проверки...";
       await pollResult(data.job_id);
     } catch (error) {
