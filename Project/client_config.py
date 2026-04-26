@@ -120,8 +120,8 @@ class ClientSettings:
 def _build_base_config() -> dict[str, Any]:
     return {
         "display_name": "Базовый клиент",
-        "model_name": os.getenv("MODEL_NAME", "openai/gpt-5.4"),
-        "polza_base_url": os.getenv("POLZA_BASE_URL", "https://polza.ai/api/v1"),
+        "model_name": os.getenv("MODEL_NAME", "openai/gpt-5.5"),
+        "polza_base_url": os.getenv("POLZA_BASE_URL", "https://routerai.ru/api/v1"),
         "polza_api_key": os.getenv("POLZA_API_KEY", "").strip(),
         "system_prompt": SYSTEM_PROMPT.strip(),
         "request_intro_text": os.getenv("DEFAULT_REQUEST_INTRO_TEXT", "Проанализируй эти документы:").strip(),
