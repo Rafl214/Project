@@ -2,7 +2,7 @@
 
 ## Что сейчас умеет сервис
 
-- Flask backend с API для загрузки двух PDF-файлов.
+- Flask backend с API для загрузки текста и файлов любых форматов.
 - Встроенный frontend на `Project/templates/index.html`.
 - Асинхронная обработка задач через `ThreadPoolExecutor`.
 - Базовые настройки из `.env`.
@@ -29,7 +29,7 @@
 - текст пользовательского запроса к модели
 - системный промпт
 - настройки reasoning
-- лимит суммарного размера двух PDF для этого клиента
+- лимит суммарного размера всех загруженных файлов для этого клиента
 
 Глобальные настройки процесса вроде `CHECKER_THREADS`, `PORT`, `WEB_HOST`, `FLASK_DEBUG` и `ENABLE_FRONTEND` остаются общими для всего сервера.
 
@@ -167,9 +167,14 @@ Windows PowerShell:
 ```powershell
 curl.exe -X POST "http://127.0.0.1:5000/upload" `
   -H "X-Client-ID: demo-school" `
-  -F "file1=@C:\path\criteria.pdf" `
-  -F "file2=@C:\path\solution.pdf"
+  -F "task_text=Проверь работу по приложенному условию" `
+  -F "student_solution=Решение ученика приложено отдельным файлом" `
+  -F "task_files=@C:\path\criteria.pdf" `
+  -F "solution_files=@C:\path\solution.jpg" `
+  -F "solution_files=@C:\path\notes.docx"
 ```
+
+Для обратной совместимости старые поля `file1` и `file2` тоже поддерживаются, но новая форма использует `task_text`, `student_solution`, `task_files` и `solution_files`.
 
 Пример ответа:
 

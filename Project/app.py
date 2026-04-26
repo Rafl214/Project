@@ -1,11 +1,13 @@
 import base64
 import json
 import logging
+import mimetypes
 import os
 import re
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -50,6 +52,14 @@ jobs_lock = threading.Lock()
 jobs: dict[str, dict[str, Any]] = {}
 
 
+@dataclass(frozen=True)
+class UploadedInputFile:
+    section: str
+    filename: str
+    mime_type: str
+    data: bytes
+
+
 def get_client(settings: ClientSettings) -> OpenAI:
     if not settings.polza_api_key:
         raise RuntimeError(
@@ -62,9 +72,9 @@ def get_client(settings: ClientSettings) -> OpenAI:
     )
 
 
-def pdf_bytes_to_data_url(raw: bytes) -> str:
+def bytes_to_data_url(raw: bytes, mime_type: str) -> str:
     encoded = base64.b64encode(raw).decode("utf-8")
-    return f"data:application/pdf;base64,{encoded}"
+    return f"data:{mime_type};base64,{encoded}"
 
 
 def utc_now_iso() -> str:
@@ -73,11 +83,39 @@ def utc_now_iso() -> str:
 
 def build_messages(
     settings: ClientSettings,
-    file1_name: str,
-    file1_bytes: bytes,
-    file2_name: str,
-    file2_bytes: bytes,
+    task_text: str,
+    task_files: list[UploadedInputFile],
+    solution_text: str,
+    solution_files: list[UploadedInputFile],
 ) -> list[dict[str, Any]]:
+    user_content: list[dict[str, Any]] = [
+        {"type": "text", "text": settings.request_intro_text},
+    ]
+
+    if task_text:
+        user_content.append({"type": "text", "text": f"Условие задания:\n{task_text}"})
+
+    for uploaded_file in task_files:
+        user_content.append(
+            {
+                "type": "text",
+                "text": f"Файл с условием: {uploaded_file.filename} ({uploaded_file.mime_type})",
+            }
+        )
+        user_content.append(file_to_message_part(uploaded_file))
+
+    if solution_text:
+        user_content.append({"type": "text", "text": f"Решение ученика:\n{solution_text}"})
+
+    for uploaded_file in solution_files:
+        user_content.append(
+            {
+                "type": "text",
+                "text": f"Файл с решением ученика: {uploaded_file.filename} ({uploaded_file.mime_type})",
+            }
+        )
+        user_content.append(file_to_message_part(uploaded_file))
+
     return [
         {
             "role": "system",
@@ -85,25 +123,19 @@ def build_messages(
         },
         {
             "role": "user",
-            "content": [
-                {"type": "text", "text": settings.request_intro_text},
-                {
-                    "type": "file",
-                    "file": {
-                        "filename": file1_name,
-                        "file_data": pdf_bytes_to_data_url(file1_bytes),
-                    },
-                },
-                {
-                    "type": "file",
-                    "file": {
-                        "filename": file2_name,
-                        "file_data": pdf_bytes_to_data_url(file2_bytes),
-                    },
-                },
-            ],
+            "content": user_content,
         },
     ]
+
+
+def file_to_message_part(uploaded_file: UploadedInputFile) -> dict[str, Any]:
+    return {
+        "type": "file",
+        "file": {
+            "filename": uploaded_file.filename,
+            "file_data": bytes_to_data_url(uploaded_file.data, uploaded_file.mime_type),
+        },
+    }
 
 
 def strip_code_fences(text: str) -> str:
@@ -150,9 +182,72 @@ def extract_requested_client_id() -> str | None:
     return None
 
 
-def validate_upload_size(settings: ClientSettings, file1_bytes: bytes, file2_bytes: bytes) -> str | None:
+def guess_mime_type(filename: str, content_type: str | None) -> str:
+    guessed_type, _encoding = mimetypes.guess_type(filename)
+    if content_type and content_type != "application/octet-stream":
+        return content_type
+    return guessed_type or content_type or "application/octet-stream"
+
+
+def read_uploaded_files(field_name: str, section: str) -> list[UploadedInputFile]:
+    uploaded_files: list[UploadedInputFile] = []
+
+    for index, storage in enumerate(request.files.getlist(field_name), start=1):
+        if not storage or not storage.filename:
+            continue
+
+        raw = storage.read()
+        if not raw:
+            continue
+
+        filename = secure_filename(storage.filename) or Path(storage.filename).name or f"{section}_{index}"
+        uploaded_files.append(
+            UploadedInputFile(
+                section=section,
+                filename=filename,
+                mime_type=guess_mime_type(filename, storage.content_type),
+                data=raw,
+            )
+        )
+
+    return uploaded_files
+
+
+def collect_upload_payload() -> tuple[str, list[UploadedInputFile], str, list[UploadedInputFile]]:
+    task_text = (request.form.get("task_text") or request.form.get("condition_text") or "").strip()
+    solution_text = (request.form.get("student_solution") or request.form.get("solution_text") or "").strip()
+
+    task_files = read_uploaded_files("task_files", "task") + read_uploaded_files("condition_files", "task")
+    solution_files = read_uploaded_files("solution_files", "solution") + read_uploaded_files(
+        "student_solution_files",
+        "solution",
+    )
+
+    # Backward compatibility with the previous two-PDF API contract.
+    task_files.extend(read_uploaded_files("file1", "task"))
+    solution_files.extend(read_uploaded_files("file2", "solution"))
+
+    return task_text, task_files, solution_text, solution_files
+
+
+def validate_upload_presence(
+    task_text: str,
+    task_files: list[UploadedInputFile],
+    solution_text: str,
+    solution_files: list[UploadedInputFile],
+) -> str | None:
+    if not task_text and not task_files:
+        return "Добавьте текст или файл с условием задания."
+
+    if not solution_text and not solution_files:
+        return "Добавьте текст или файл с решением ученика."
+
+    return None
+
+
+def validate_upload_size(settings: ClientSettings, uploaded_files: list[UploadedInputFile]) -> str | None:
     limit_bytes = settings.max_content_length_mb * 1024 * 1024
-    total_size = len(file1_bytes) + len(file2_bytes)
+    total_size = sum(len(uploaded_file.data) for uploaded_file in uploaded_files)
     if total_size > limit_bytes:
         return (
             f"Суммарный размер файлов превышает лимит клиента {settings.display_name}: "
@@ -161,7 +256,7 @@ def validate_upload_size(settings: ClientSettings, file1_bytes: bytes, file2_byt
     return None
 
 
-def create_job(file1_name: str, file2_name: str, settings: ClientSettings) -> str:
+def create_job(file_names: list[str], settings: ClientSettings) -> str:
     job_id = uuid.uuid4().hex
     with jobs_lock:
         jobs[job_id] = {
@@ -170,7 +265,7 @@ def create_job(file1_name: str, file2_name: str, settings: ClientSettings) -> st
             "message": "Задача поставлена в очередь.",
             "created_at": utc_now_iso(),
             "updated_at": utc_now_iso(),
-            "file_names": [file1_name, file2_name],
+            "file_names": file_names,
             "client": settings.to_public_dict(),
             "result": None,
             "download_path": None,
@@ -194,10 +289,10 @@ def save_result_to_disk(job_id: str, result_payload: Any, settings: ClientSettin
 
 def run_check(
     job_id: str,
-    file1_name: str,
-    file1_bytes: bytes,
-    file2_name: str,
-    file2_bytes: bytes,
+    task_text: str,
+    task_files: list[UploadedInputFile],
+    solution_text: str,
+    solution_files: list[UploadedInputFile],
     settings: ClientSettings,
 ) -> None:
     update_job(
@@ -209,7 +304,7 @@ def run_check(
 
     try:
         client = get_client(settings)
-        messages = build_messages(settings, file1_name, file1_bytes, file2_name, file2_bytes)
+        messages = build_messages(settings, task_text, task_files, solution_text, solution_files)
 
         completion_kwargs: dict[str, Any] = {
             "model": settings.model_name,
@@ -312,47 +407,34 @@ def healthz():
 @app.post("/upload")
 def upload():
     try:
-        file1 = request.files.get("file1")
-        file2 = request.files.get("file2")
-
-        if not file1 or not file2:
-            return jsonify({"error": "Нужно загрузить 2 PDF файла"}), 400
-
-        if not file1.filename or not file2.filename:
-            return jsonify({"error": "У файлов должны быть имена"}), 400
-
-        if not file1.filename.lower().endswith(".pdf") or not file2.filename.lower().endswith(".pdf"):
-            return jsonify({"error": "Можно загружать только PDF"}), 400
-
         requested_client_id = extract_requested_client_id()
         try:
             settings = resolve_client_settings(requested_client_id)
         except ValueError as exc:
             return jsonify({"error": f"Ошибка конфигурации клиента: {exc}"}), 400
 
-        safe_name_1 = secure_filename(file1.filename) or "file1.pdf"
-        safe_name_2 = secure_filename(file2.filename) or "file2.pdf"
+        task_text, task_files, solution_text, solution_files = collect_upload_payload()
+        presence_error = validate_upload_presence(task_text, task_files, solution_text, solution_files)
+        if presence_error:
+            return jsonify({"error": presence_error}), 400
 
-        file1_bytes = file1.read()
-        file2_bytes = file2.read()
-
-        if not file1_bytes or not file2_bytes:
-            return jsonify({"error": "Оба файла должны быть непустыми"}), 400
-
-        size_error = validate_upload_size(settings, file1_bytes, file2_bytes)
+        uploaded_files = task_files + solution_files
+        size_error = validate_upload_size(settings, uploaded_files)
         if size_error:
             return jsonify({"error": size_error, "client": settings.to_public_dict()}), 413
 
-        job_id = create_job(safe_name_1, safe_name_2, settings)
-        executor.submit(run_check, job_id, safe_name_1, file1_bytes, safe_name_2, file2_bytes, settings)
+        file_names = [uploaded_file.filename for uploaded_file in uploaded_files]
+        job_id = create_job(file_names, settings)
+        executor.submit(run_check, job_id, task_text, task_files, solution_text, solution_files, settings)
 
         return (
             jsonify(
                 {
                     "job_id": job_id,
                     "status": "queued",
-                    "message": "Файлы приняты. Проверка запущена в фоне.",
+                    "message": "Материалы приняты. Проверка запущена в фоне.",
                     "status_url": f"/result/{job_id}",
+                    "file_names": file_names,
                     "client": settings.to_public_dict(),
                 }
             ),
@@ -377,6 +459,7 @@ def get_result(job_id: str):
         "message": job["message"],
         "created_at": job["created_at"],
         "updated_at": job["updated_at"],
+        "file_names": job.get("file_names", []),
         "client": job["client"],
     }
 

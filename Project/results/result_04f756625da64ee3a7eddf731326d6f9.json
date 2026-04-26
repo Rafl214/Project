@@ -1,0 +1,19 @@
+{
+  "job_id": "04f756625da64ee3a7eddf731326d6f9",
+  "saved_at": "2026-04-26T14:10:19.830047+00:00",
+  "client": {
+    "requested_client_id": null,
+    "effective_client_id": "default",
+    "display_name": "Базовый клиент",
+    "config_source": "default",
+    "model_name": "openai/gpt-5.5",
+    "polza_base_url": "https://polza.ai/api/v1",
+    "reasoning_enabled": true,
+    "reasoning_effort": "xhigh",
+    "max_content_length_mb": 30,
+    "has_api_key": true
+  },
+  "result": {
+    "raw_result": ""
+  }
+}
