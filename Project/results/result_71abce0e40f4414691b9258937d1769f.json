@@ -1,0 +1,78 @@
+{
+  "job_id": "71abce0e40f4414691b9258937d1769f",
+  "saved_at": "2026-04-18T16:03:05.001196+00:00",
+  "client": {
+    "requested_client_id": null,
+    "effective_client_id": "default",
+    "display_name": "Базовый клиент",
+    "config_source": "default",
+    "model_name": "ai21/jamba-large-1.7",
+    "polza_base_url": "https://polza.ai/api/v1",
+    "reasoning_enabled": true,
+    "reasoning_effort": "high",
+    "max_content_length_mb": 30,
+    "has_api_key": true
+  },
+  "result": {
+    "file_identification": {
+      "statement_file": "11__2025.pdf",
+      "solution_file": "11____Final.pdf",
+      "confidence": "high"
+    },
+    "warnings": [
+      "The solution file includes many handwritten notes and diagrams that require careful interpretation to match them to the corresponding tasks in the statement file.",
+      "Some handwritten responses are condensed or expressed in an unconventional format, which may slightly impact confidence in their alignment with the evaluation criteria."
+    ],
+    "tasks": [
+      {
+        "task_number": "11.1",
+        "max_score": 15,
+        "score": 15,
+        "confidence_percent": 95,
+        "status": "checked",
+        "comment": "The solution correctly proves that the sum of the fractions is less than 1.5 by showing that each term in the sum satisfies the required condition. The reasoning is clear and aligns with the provided criteria."
+      },
+      {
+        "task_number": "11.2",
+        "max_score": 15,
+        "score": 15,
+        "confidence_percent": 90,
+        "status": "checked",
+        "comment": "The solution provides valid counterexamples with detailed reasoning to demonstrate that $(P(x))^{2025}$ does not necessarily have an odd coefficient. Some steps are presented in a compact form, but they are logically sound and reconstructable."
+      },
+      {
+        "task_number": "11.3",
+        "max_score": 15,
+        "score": 14,
+        "confidence_percent": 85,
+        "status": "checked",
+        "comment": "The solution correctly establishes the properties of the hexagon and demonstrates the inequality $2CF \\geq AB + DE$, but it does not fully explore the case of equality. This slightly affects the score, though the main argument is valid and well-presented."
+      },
+      {
+        "task_number": "11.4",
+        "max_score": 15,
+        "score": 15,
+        "confidence_percent": 95,
+        "status": "checked",
+        "comment": "The solution correctly counts the number of long trains using combinatorial methods and arrives at the closed-form expression. The steps are clear, and the reasoning is solid."
+      },
+      {
+        "task_number": "11.5",
+        "max_score": 20,
+        "score": 20,
+        "confidence_percent": 90,
+        "status": "checked",
+        "comment": "The solution establishes a valid invariant based on the sum of squared diagonal values and demonstrates how this invariant changes under the players' moves. The reasoning is clear and aligns with the criteria, though slight compactness in the explanation reduces confidence slightly."
+      },
+      {
+        "task_number": "11.6",
+        "max_score": 20,
+        "score": 20,
+        "confidence_percent": 85,
+        "status": "checked",
+        "comment": "The solution provides a detailed construction of disjoint rectangles with non-commensurable side lengths and proves the uniqueness of the assembly. While the reasoning is correct, the presentation is dense and could benefit from further clarification of some steps, slightly lowering confidence."
+      }
+    ],
+    "total_score": 109
+  }
+}

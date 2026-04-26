@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, send_file
 from openai import OpenAI
 from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 
@@ -34,9 +35,15 @@ SERVER_MAX_CONTENT_LENGTH_MB = max(
 )
 FRONTEND_ENABLED = os.getenv("ENABLE_FRONTEND", "1") == "1"
 CLIENT_ID_HEADER = os.getenv("CLIENT_ID_HEADER", "X-Client-ID")
+TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "0") == "1"
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip()
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = SERVER_MAX_CONTENT_LENGTH_MB * 1024 * 1024
+
+if TRUST_PROXY_HEADERS:
+    # Allow correct scheme/host detection when the service sits behind a trusted reverse proxy or tunnel.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)  # type: ignore[assignment]
 
 executor = ThreadPoolExecutor(max_workers=CHECKER_THREADS, thread_name_prefix="olympiad-checker")
 jobs_lock = threading.Lock()
@@ -265,6 +272,7 @@ def index():
                 "frontend_enabled": False,
                 "message": "Frontend отключён. Используйте API-эндпоинт POST /upload.",
                 "client_id_header": CLIENT_ID_HEADER,
+                "public_base_url": PUBLIC_BASE_URL or None,
                 "registered_clients": list_registered_clients(),
             }
         )
@@ -291,6 +299,10 @@ def healthz():
             "frontend_enabled": FRONTEND_ENABLED,
             "client_id_header": CLIENT_ID_HEADER,
             "client_configs_dir": str(get_client_configs_dir()),
+            "web_host": os.getenv("WEB_HOST", "0.0.0.0"),
+            "port": int(os.getenv("PORT", os.getenv("WEB_PORT", "5000"))),
+            "trust_proxy_headers": TRUST_PROXY_HEADERS,
+            "public_base_url": PUBLIC_BASE_URL or None,
             "registered_clients": list_registered_clients(),
             "default_client": default_settings.to_public_dict(),
         }
